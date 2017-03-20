@@ -34,7 +34,7 @@
 
 void setup(); // Esto es para solucionar el bug que tiene Arduino al usar los #ifdef del preprocesador
 
-#define MIDI_COMMS
+//M#define MIDI_COMMS
 
 #if defined(MIDI_COMMS)
 struct MySettings : public midi::DefaultSettings
@@ -632,7 +632,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   byte channel = inputData.channel();
   byte minMidi = inputData.param_min();
   byte maxMidi = inputData.param_max();
-  byte noiseTh;
+  uint16_t noiseTh;
   static uint16_t prevValue[NUM_MUX * NUM_MUX_CHANNELS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   uint16_t minMidiNRPN, maxMidiNRPN;
@@ -643,15 +643,11 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
         minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
         maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
         value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidiNRPN, maxMidiNRPN);
+        noiseTh = (abs(maxMidiNRPN - minMidiNRPN) >> 7) + 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
+        if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;
+        Serial.print("Noise THR: "); Serial.println(noiseTh);
       }else{
         value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidi, maxMidi); 
-      }
-      
-      // noise threshold is dynamic according to the range between min and max value selected
-      if (mode == KMS::M_NRPN) {
-        noiseTh = abs(maxMidiNRPN - minMidiNRPN) >> 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
-        if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;
-      } else {                                           // if range is less than 64, no noise filter is applied
         noiseTh = abs(maxMidi - minMidi) >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
         if (IsNoise(value, prevValue[numInput], numInput, false, noiseTh)) return;
       }
@@ -666,6 +662,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   
 #if defined(MIDI_COMMS)
   if (configMode) {
+    value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, 0, 127);
     if (analog)
       MIDI.sendControlChange( numInput, value, 1);
     else
