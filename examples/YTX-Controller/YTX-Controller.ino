@@ -643,7 +643,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
         minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
         maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
         value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidiNRPN, maxMidiNRPN);
-        noiseTh = (abs(maxMidiNRPN - minMidiNRPN) >> 7)+ 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
+        noiseTh = (abs(maxMidiNRPN - minMidiNRPN) >> 7) + 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
         if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;
         Serial.print("Noise THR: "); Serial.println(noiseTh);
       }else{
