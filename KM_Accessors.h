@@ -10,7 +10,6 @@
 #include "KM_Data.h"
 #include "KM_EEPROM.h"
 #include <avr/pgmspace.h>
-
 										 
 namespace KMS {
 extern EEPROM_IO io;
