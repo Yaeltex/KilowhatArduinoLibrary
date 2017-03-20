@@ -27,8 +27,8 @@
 /*
    Inclusión de librerías.
 */
-#include <KM_Data.h>
 #include <Kilomux.h>
+#include <KM_Data.h>
 #include <MIDI.h>
 #include <NewPing.h>
 
@@ -91,11 +91,11 @@ KMS::GlobalData gD = KMS::globalData();
 KMS::InputUS ultrasonicSensorData = KMS::ultrasound();
 unsigned long minMicroSecSensor = 0;
 unsigned long maxMicroSecSensor = 0;
-byte pingSensorInterval = 25; // How frequently are we going to send out a ping (in milliseconds). 50ms would be 20 times a second.
-unsigned long pingSensorTimer;     // Holds the next ping time.
-bool sensorActive = 0;                  // Inicializo inactivo (variable interna)
-uint16_t usSensorPrevValue;                       // Array para el filtrado de la lectura del sensor
-uint16_t uSeg = 0;                                // Contador de microsegundos para el ping del sensor.
+byte pingSensorInterval = 25;       // How frequently are we going to send out a ping (in milliseconds). 50ms would be 20 times a second.
+unsigned long pingSensorTimer;      // Holds the next ping time.
+bool sensorActive = 0;              // Inicializo inactivo (variable interna)
+uint16_t usSensorPrevValue;         // Array para el filtrado de la lectura del sensor
+uint16_t uSeg = 0;                  // Contador de microsegundos para el ping del sensor.
 
 // Running average filter variables
 uint8_t filterIndex = 0;            // Indice que recorre los valores del filtro de suavizado
@@ -123,13 +123,13 @@ static byte blinkCountStatus = 0;
 uint16_t packetSize;
 unsigned long prevBlinkMillis = 0;
 ///////////////////////////////////////////////////////////////////////////////////////////
-
+                                 
 void setup() {
 #if defined(MIDI_COMMS)
   MIDI.begin(MIDI_CHANNEL_OMNI); // Se inicializa la comunicación MIDI.
   MIDI.turnThruOff();            // Por default, la librería de Arduino MIDI tiene el THRU en ON, y NO QUEREMOS ESO!
 #else
-  Serial.begin(250000);                  // Se inicializa la comunicación serial.
+  Serial.begin(115200);          // Se inicializa la comunicación serial.
 #endif
 
   // Initialize Kilomux shield
@@ -457,20 +457,11 @@ void EchoCheck(){
     byte mode = ultrasonicSensorData.mode();
     byte midiChannel = ultrasonicSensorData.channel();
     byte param = ultrasonicSensorData.param_fine();
-    byte minMidi = ultrasonicSensorData.param_min_coarse();
-    byte maxMidi = ultrasonicSensorData.param_max_coarse();
+    uint16_t minMidi = ultrasonicSensorData.param_min();
+    uint16_t maxMidi = ultrasonicSensorData.param_max();
     
-    if (minMidi < maxMidi)
-      usSensorValue = map(usSensorValue,  0,
-                                          sensorRange,
-                                          mode == KMS::M_NRPN ? minMidi << 7        : minMidi,
-                                          mode == KMS::M_NRPN ? (maxMidi << 7) | 0x7F : maxMidi);
-    else
-      usSensorValue = map(usSensorValue,  0,
-                                          sensorRange,
-                                          mode == KMS::M_NRPN ? (minMidi << 7) | 0x7F : minMidi,
-                                          mode == KMS::M_NRPN ? maxMidi << 7        : maxMidi);
-
+    usSensorValue = map(usSensorValue,  0, sensorRange, minMidi, maxMidi);
+    
     // FILTRO DE MEDIA MÓVIL PARA SUAVIZAR LA LECTURA
     usSensorValue = FilterGetNewAverage(usSensorValue);
     
@@ -639,39 +630,39 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   bool analog = inputData.AD();       // 1 is analog
   byte param = inputData.param_fine();
   byte channel = inputData.channel();
-  byte minMidi = inputData.param_min_coarse();
-  byte maxMidi = inputData.param_max_coarse();
+  byte minMidi = inputData.param_min();
+  byte maxMidi = inputData.param_max();
   byte noiseTh;
   static uint16_t prevValue[NUM_MUX * NUM_MUX_CHANNELS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-
-  if (analog) {
-    if (minMidi <= maxMidi){
-      value = map(value,  0,
-                  mode == KMS::M_NRPN ? 1023              : 127,
-                  mode == KMS::M_NRPN ? minMidi << 7        : minMidi,
-                  mode == KMS::M_NRPN ? (maxMidi << 7) | 0x7F : maxMidi);
+  uint16_t minMidiNRPN, maxMidiNRPN;
+  
+  if(!configMode){
+    if (analog) {
+      if (mode == KMS::M_NRPN){
+        minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
+        maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
+        value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidiNRPN, maxMidiNRPN);
+      }else{
+        value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidi, maxMidi); 
+      }
+      
+      // noise threshold is dynamic according to the range between min and max value selected
+      if (mode == KMS::M_NRPN) {
+        noiseTh = abs(maxMidiNRPN - minMidiNRPN) >> 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
+        if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;
+      } else {                                           // if range is less than 64, no noise filter is applied
+        noiseTh = abs(maxMidi - minMidi) >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
+        if (IsNoise(value, prevValue[numInput], numInput, false, noiseTh)) return;
+      }
+      prevValue[numInput] = value;
     }
-    else{
-      value = map(value,  0,
-                  mode == KMS::M_NRPN ? 1023              : 127,
-                  mode == KMS::M_NRPN ? (minMidi << 7) | 0x7F : minMidi,
-                  mode == KMS::M_NRPN ? maxMidi << 7        : maxMidi);
-    }
-    // noise threshold is dynamic according to the range between min and max value selected
-    if (mode == KMS::M_NRPN) {
-      noiseTh = abs(maxMidi - minMidi) >> 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
-      if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;
-    } else {                                           // if range is less than 64, no noise filter is applied
-      noiseTh = abs(maxMidi - minMidi) >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
-      if (IsNoise(value, prevValue[numInput], numInput, false, noiseTh)) return;
-    }
-    prevValue[numInput] = value;
+    else {
+      if (value)  value = minMidi;
+      else        value = maxMidi;
+    }  
   }
-  else {
-    if (value)  value = minMidi;
-    else        value = maxMidi;
-  }
+  
   
 #if defined(MIDI_COMMS)
   if (configMode) {
@@ -699,15 +690,15 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
     }
   }
 #else
-  if (mode == KMS::M_NOTE) {
-    if (!analog) value = !value * NOTE_ON;
-  }
-  else if (mode == KMS::M_NRPN) {
-    value = map(value, 0, 1023, 0, 16383);
-  }
-  if (analog){
-    value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidi, maxMidi);
-  }
+//  if (mode == KMS::M_NOTE) {
+//    if (!analog) value = !value * NOTE_ON;
+//  }
+//  else if (mode == KMS::M_NRPN) {
+//    value = map(value, 0, 1023, 0, 16383);
+//  }
+//  if (analog){
+//    value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidi, maxMidi);
+//  }
     
   Serial.print("Channel: "); Serial.print(channel); Serial.print("\t");
   Serial.print("Tipo: "); Serial.print(inputData.AD() ? "Analog" : "Digital"); Serial.print("\t");
