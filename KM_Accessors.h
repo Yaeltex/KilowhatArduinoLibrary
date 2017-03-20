@@ -9,7 +9,9 @@
 
 #include "KM_Data.h"
 #include "KM_EEPROM.h"
+#include <avr/pgmspace.h>
 
+										 
 namespace KMS {
 extern EEPROM_IO io;
 
@@ -91,30 +93,29 @@ class InputBase {
       param_coarse() << 7 | param_fine();
     }
 
-    //Param min (coarse part if NRPN, should shift 7 bits)
+    //Param min
     byte param_min() const {
-      return _p[3] << 7 | _p[4];
+      return _p[3];
     }
-	
-    //Param max (coarse part if NRPN, should shift 7 bits)
+    //Param max
     byte param_max() const {
-      return _p[5] << 7 | _p[6];
+      return _p[4];
     }
 
 };
 
 class InputNorm : public InputBase {
   public:
-    static const int length = 8;
+    static const int length = 6;
     InputNorm(unsigned int offset) : InputBase(offset) {
-      io.read(offset+7, _p+7, 1);   
+      io.read(offset+5, _p+5, 1);   
     }
 	
 	bool toggle() const{
-	  return (_p[7] & 2) != 0;
+	  return (_p[5] & 2) != 0;
 	}
     bool AD() const {
-      return (_p[7] & 1) != 0;
+      return (_p[5] & 1) != 0;
     }
 };
 
@@ -127,15 +128,15 @@ class InputUS : public InputBase {
     // 40-46            48-54            55-61            64-70
     // distancia_min_H, distancia_min_L, distancia_max_H, distancia_max_L
   public:
-    static const int length = 11;
+    static const int length = 9;
     InputUS(unsigned int offset) : InputBase(offset) {
-      io.read(offset+7, _p+7, 4);   
+      io.read(offset+5, _p+5, 4);   
     }
     int dist_min() const {
-      return _p[7] << 7 | _p[8];
+      return _p[5] << 7 | _p[6];
     }
     int dist_max() const {
-      return _p[9] << 7 | _p[10];
+      return _p[7] << 7 | _p[8];
     }
 };
 
