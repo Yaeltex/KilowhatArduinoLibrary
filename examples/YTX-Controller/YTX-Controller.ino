@@ -648,24 +648,29 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   if (analog) {
     if (minMidi <= maxMidi){
       value = map(value,  0,
-                  mode == KMS::M_NRPN ? 1023              : 127,
-                  mode == KMS::M_NRPN ? minMidi << 7        : minMidi,
+                  mode == KMS::M_NRPN ? 1023                  : 127,
+                  mode == KMS::M_NRPN ? minMidi << 7          : minMidi,
                   mode == KMS::M_NRPN ? (maxMidi << 7) | 0x7F : maxMidi);
     }
     else{
       value = map(value,  0,
-                  mode == KMS::M_NRPN ? 1023              : 127,
+                  mode == KMS::M_NRPN ? 1023                  : 127,
                   mode == KMS::M_NRPN ? (minMidi << 7) | 0x7F : minMidi,
-                  mode == KMS::M_NRPN ? maxMidi << 7        : maxMidi);
+                  mode == KMS::M_NRPN ? maxMidi << 7          : maxMidi);
     }
     // noise threshold is dynamic according to the range between min and max value selected
-    if (mode == KMS::M_NRPN) {
-      noiseTh = abs(maxMidi - minMidi) >> 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
+    uint16_t controlRange = abs(maxMidi - minMidi);
+    
+    if (mode == KMS::M_NRPN && controlRange >= 1) {
+      noiseTh = controlRange >> 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
       if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;
-    } else {                                           // if range is less than 64, no noise filter is applied
-      noiseTh = abs(maxMidi - minMidi) >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
+      
+    } else {                                // if range is less than 64, no noise filter is applied
+      noiseTh = controlRange >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
       if (IsNoise(value, prevValue[numInput], numInput, false, noiseTh)) return;
     }
+//    Serial.print("Min: ");Serial.println(minMidi); 
+//    Serial.print("Max: ");Serial.println(maxMidi);
     prevValue[numInput] = value;
   }
   else {
@@ -675,12 +680,14 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   
 #if defined(MIDI_COMMS)
   if (configMode) {
-    if (analog)
+    if (analog){
+      value = map(value, 0, KMS::M_NRPN ? 1023 : 127, 0, 127);
       MIDI.sendControlChange( numInput, value, 1);
+    }
     else
       MIDI.sendNoteOn( numInput, value, 1);
   }
-  else {
+  else {    // CONFIG MODE MESSAGES - ONLY CC FOR ANALOG INPUTS AND NOTES FOR DIGITAL INPUTS
     switch (mode) {
       case (KMS::M_NOTE):
         MIDI.sendNoteOn(param, value, channel); break;
@@ -698,17 +705,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
       default: break;
     }
   }
-#else
-  if (mode == KMS::M_NOTE) {
-    if (!analog) value = !value * NOTE_ON;
-  }
-  else if (mode == KMS::M_NRPN) {
-    value = map(value, 0, 1023, 0, 16383);
-  }
-  if (analog){
-    value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidi, maxMidi);
-  }
-    
+#else    
   Serial.print("Channel: "); Serial.print(channel); Serial.print("\t");
   Serial.print("Tipo: "); Serial.print(inputData.AD() ? "Analog" : "Digital"); Serial.print("\t");
   Serial.print("Min: "); Serial.print(minMidi); Serial.print("\t");
