@@ -14,5 +14,6 @@ Para usar este sketch se requieren las siguientes librerías:
 
 * [Kilomux Shield](https://github.com/Yaeltex/kilomux-arduino-library/archive/master.zip)
 * [Kilowhat SysEx Library](https://github.com/Yaeltex/kilowhat-arduino-library/archive/master.zip)
+* [EEPROMex - extensión de la librería EEPROM](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/EEPROMEx.zip?raw=true)
 * [NewPing - modificada por Yaeltex](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/NewPing.zip?raw=true)
 * [Arduino MIDI Library 4.2](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/MIDI.zip?raw=true)
