@@ -23,9 +23,11 @@ namespace KMS {
     M_NOTE = 1,
     M_CC = 2,
     M_NRPN = 3,
-	M_PROGRAM = 4,
+	M_PROGRAM_MINUS = 4,
+	M_PROGRAM = 5,
+	M_PROGRAM_PLUS = 6,
     // Only for inputs (save one bit in outputs)
-    M_SHIFTER = 5
+    M_SHIFTER = 7
   };
   enum Type {
     T_DIGITAL = 0,
