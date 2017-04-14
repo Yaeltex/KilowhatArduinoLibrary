@@ -467,23 +467,21 @@ void EchoCheck(){
     uSeg = constrain(uSeg, minMicroSecSensor, maxMicroSecSensor);
     uint16_t sensorRange = maxMicroSecSensor - minMicroSecSensor;
     uint16_t usSensorValue = map(uSeg, minMicroSecSensor, maxMicroSecSensor, 0, sensorRange);  
-    
+    uint16_t minMidiNRPN, maxMidiNRPN;
     byte mode = ultrasonicSensorData.mode();
     byte midiChannel = ultrasonicSensorData.channel();
     byte param = ultrasonicSensorData.param_fine();
-    byte minMidi = ultrasonicSensorData.param_min_coarse();
-    byte maxMidi = ultrasonicSensorData.param_max_coarse();
+    byte minMidi = ultrasonicSensorData.param_min();
+    byte maxMidi = ultrasonicSensorData.param_max();
+
+    if (mode == KMS::M_NRPN){
+      minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
+      maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
+      usSensorValue = map(usSensorValue, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidiNRPN, maxMidiNRPN);
+    }else{
+      usSensorValue = map(usSensorValue, 0, 127, minMidi, maxMidi); 
+    }
     
-    if (minMidi < maxMidi)
-      usSensorValue = map(usSensorValue,  0,
-                                          sensorRange,
-                                          mode == KMS::M_NRPN ? minMidi << 7        : minMidi,
-                                          mode == KMS::M_NRPN ? (maxMidi << 7) | 0x7F : maxMidi);
-    else
-      usSensorValue = map(usSensorValue,  0,
-                                          sensorRange,
-                                          mode == KMS::M_NRPN ? (minMidi << 7) | 0x7F : minMidi,
-                                          mode == KMS::M_NRPN ? maxMidi << 7        : maxMidi);
 
     // FILTRO DE MEDIA MÓVIL PARA SUAVIZAR LA LECTURA
     usSensorValue = FilterGetNewAverage(usSensorValue);
@@ -493,7 +491,7 @@ void EchoCheck(){
       usSensorPrevValue = usSensorValue;
       #if defined(MIDI_COMMS)
       if(configMode){
-        MIDI.sendControlChange(100, usSensorValue, 1);
+        MIDI.sendControlChange(0, usSensorValue, 15);
       }
       else{
         switch (mode) {
@@ -653,62 +651,57 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   bool analog = inputData.AD();       // 1 is analog
   byte param = inputData.param_fine();
   byte channel = inputData.channel();
-  byte minMidi = inputData.param_min_coarse();
-  byte maxMidi = inputData.param_max_coarse();
-  byte noiseTh;
+  byte minMidi = inputData.param_min();
+  byte maxMidi = inputData.param_max();
+  uint16_t minMidiNRPN, maxMidiNRPN;
+  uint16_t mapValue;
+  uint16_t noiseTh;
   static uint16_t prevValue[NUM_MUX * NUM_MUX_CHANNELS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  if (analog) {
-    if (minMidi <= maxMidi){
-      value = map(value,  0,
-                  mode == KMS::M_NRPN ? 1023                  : 127,
-                  mode == KMS::M_NRPN ? minMidi << 7          : minMidi,
-                  mode == KMS::M_NRPN ? (maxMidi << 7) | 0x7F : maxMidi);
+  if(!configMode){
+    if (analog) {
+      if (mode == KMS::M_NRPN){
+        minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
+        maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
+        mapValue = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidiNRPN, maxMidiNRPN);
+        int maxMinDiff = maxMidiNRPN - minMidiNRPN;   // abs() doesn't like math operations inside the parameter brackets (https://www.arduino.cc/en/Reference/Abs)
+        noiseTh = abs(maxMinDiff) >> 7;               // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
+        if (IsNoise(mapValue, prevValue[numInput], numInput, true, noiseTh)) 
+          return;
+      }else{
+        mapValue = map(value, 0, 127, minMidi, maxMidi); 
+        int maxMinDiff = maxMidi - minMidi;           // abs() doesn't like math operations inside the parameter brackets (https://www.arduino.cc/en/Reference/Abs)
+        noiseTh = abs(maxMinDiff) >> 6;               // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
+        if (IsNoise(mapValue, prevValue[numInput], numInput, false, noiseTh)) 
+          return;
+      }
+      prevValue[numInput] = mapValue;
     }
-    else{
-      value = map(value,  0,
-                  mode == KMS::M_NRPN ? 1023                  : 127,
-                  mode == KMS::M_NRPN ? (minMidi << 7) | 0x7F : minMidi,
-                  mode == KMS::M_NRPN ? maxMidi << 7          : maxMidi);
-    }
-    // noise threshold is dynamic according to the range between min and max value selected
-    uint16_t controlRange = abs(maxMidi - minMidi);
-    
-    if (mode == KMS::M_NRPN && controlRange >= 1) {
-      noiseTh = controlRange >> 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
-      if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;
-    } else if (mode == KMS::M_NRPN && controlRange == 0) {
-      noiseTh = 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
-      if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;  
-    } else {                                // if range is less than 64, no noise filter is applied
-      noiseTh = controlRange >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
-      if (IsNoise(value, prevValue[numInput], numInput, false, noiseTh)) return;
-    }
-//    Serial.print("Min: ");Serial.println(minMidi); 
-//    Serial.print("Max: ");Serial.println(maxMidi);
-    prevValue[numInput] = value;
-  }
-  else {
-    if (value)  value = minMidi;
-    else        value = maxMidi;
+    else {
+      if (value)  mapValue = minMidi;
+      else        mapValue = maxMidi;
+    }  
   }
   
 #if defined(MIDI_COMMS)
   if (configMode) {
+    if (IsNoise(value, prevValue[numInput], numInput, false, noiseTh)) 
+      return;
+    value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, 0, 127);
     MIDI.sendControlChange( numInput, value, 1);
   }
   else {    // CONFIG MODE MESSAGES - ONLY CC FOR ANALOG INPUTS AND NOTES FOR DIGITAL INPUTS
     switch (mode) {
       case (KMS::M_NOTE):
-        MIDI.sendNoteOn(param, value, channel); break;
+        MIDI.sendNoteOn(param, mapValue, channel); break;
       case (KMS::M_CC):
-        MIDI.sendControlChange(param, value, channel); break;
+        MIDI.sendControlChange(param, mapValue, channel); break;
       case KMS::M_NRPN:
         MIDI.sendControlChange( 101, inputData.param_coarse(), channel);
         MIDI.sendControlChange( 100, inputData.param_fine(), channel);
-        MIDI.sendControlChange( 6, (value >> 7) & 0x7F, channel);
-        MIDI.sendControlChange( 38, (value & 0x7F), channel); break;
+        MIDI.sendControlChange( 6, (mapValue >> 7) & 0x7F, channel);
+        MIDI.sendControlChange( 38, (mapValue & 0x7F), channel); break;
       case KMS::M_PROGRAM_MINUS:
         if(currentProgram[currBank][channel-1] > 0){
           currentProgram[currBank][channel-1]--;
@@ -719,7 +712,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
           MIDI.sendProgramChange( param, channel);
         } 
         else if (analog){
-          MIDI.sendProgramChange( value, channel);
+          MIDI.sendProgramChange( mapValue, channel);
         } break;
       case KMS::M_PROGRAM_PLUS:
         if(currentProgram[currBank][channel-1] < 127){
