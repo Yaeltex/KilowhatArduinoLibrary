@@ -1,5 +1,6 @@
 /*
    Autor: Franco Grassano - YAELTEX
+   Version: 0.9.1
    ---
    INFORMACIÓN DE LICENCIA
    Kilo Mux Shield por Yaeltex se distribuye bajo una licencia

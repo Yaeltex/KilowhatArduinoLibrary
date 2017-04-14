@@ -3,6 +3,7 @@
 Esta librería fue hecha para facilitar la escritura y el acceso a la configuración guardada en la EEPROM de la Arduino, para ser utilizada por el usuario del Kilomux.
 Para poder usarla, colocar los contenidos de la descarga en la carpeta Documents/Arduino/libraries, e incluir en tu sketch desde el Arduino IDE.
 
+Última versión: v0.9.1 (funciona con la misma versión del Kilowhat, o superior)
 
 ## YTX-Controller
 Este ejemplo es el código necesario para usar el [Kilowhat](http://wiki.yaeltex.com.ar/index.php?title=Kilowhat), preparado para enviar y recibir el protocolo SysEx, en este caso usado para que la Arduino reciba una nueva configuración de entradas y salidas, y guardarlo en la EEPROM interna de la placa.
