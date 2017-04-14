@@ -34,7 +34,7 @@
 
 void setup(); // Esto es para solucionar el bug que tiene Arduino al usar los #ifdef del preprocesador
 
-//M#define MIDI_COMMS
+#define MIDI_COMMS
 
 #if defined(MIDI_COMMS)
 struct MySettings : public midi::DefaultSettings
@@ -645,7 +645,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
         value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidiNRPN, maxMidiNRPN);
         noiseTh = (abs(maxMidiNRPN - minMidiNRPN) >> 7) + 1;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
         if (IsNoise(value, prevValue[numInput], numInput, true, noiseTh)) return;
-        Serial.print("Noise THR: "); Serial.println(noiseTh);
+        //Serial.print("Noise THR: "); Serial.println(noiseTh);
       }else{
         value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidi, maxMidi); 
         noiseTh = abs(maxMidi - minMidi) >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
