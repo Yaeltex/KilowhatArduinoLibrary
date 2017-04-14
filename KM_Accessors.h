@@ -10,7 +10,7 @@
 #include "KM_Data.h"
 #include "KM_EEPROM.h"
 #include <avr/pgmspace.h>
-										 
+
 namespace KMS {
 extern EEPROM_IO io;
 
@@ -92,11 +92,12 @@ class InputBase {
       param_coarse() << 7 | param_fine();
     }
 
-    //Param min
+    //Param min (coarse part if NRPN, should shift 7 bits)
     byte param_min() const {
       return _p[3];
     }
-    //Param max
+
+    //Param max (coarse part if NRPN, should shift 7 bits)
     byte param_max() const {
       return _p[4];
     }
