@@ -467,7 +467,7 @@ void EchoCheck(){
     uSeg = usSensor.ping_result;
     uSeg = constrain(uSeg, minMicroSecSensor, maxMicroSecSensor);
     uint16_t sensorRange = maxMicroSecSensor - minMicroSecSensor;
-    uint16_t usSensorValue = map(uSeg, minMicroSecSensor, maxMicroSecSensor, 0, sensorRange);  
+    uint16_t usSensorValue = map(uSeg, minMicroSecSensor, maxMicroSecSensor+1, 0, sensorRange+1);  
     uint16_t minMidiNRPN, maxMidiNRPN;
     byte mode = ultrasonicSensorData.mode();
     byte midiChannel = ultrasonicSensorData.channel();
@@ -478,9 +478,9 @@ void EchoCheck(){
     if (mode == KMS::M_NRPN){
       minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
       maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
-      usSensorValue = map(usSensorValue, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidiNRPN, maxMidiNRPN);
+      usSensorValue = map(usSensorValue, 0, mode == KMS::M_NRPN ? 1024 : 128, minMidiNRPN, maxMidiNRPN+1);
     }else{
-      usSensorValue = map(usSensorValue, 0, 127, minMidi, maxMidi); 
+      usSensorValue = map(usSensorValue, 0, 128, minMidi, maxMidi+1); 
     }
     
 
@@ -609,7 +609,7 @@ void ReadInputs() {
           //Serial.println(KMShield.muxReadings[mux][muxChannel]);
         //}
         // El valor leido va de 0-1023. Convertimos a 0-127, dividiendo por 8.
-        if (!firstRead) {  // Si lo que leo no es ruido
+        if (!firstRead && KMShield.muxReadings[mux][muxChannel] != KMShield.muxPrevReadings[mux][muxChannel]) {  // Si leo algo distinto a lo anterior
           // Enviar mensaje.
           InputChanged(inputIndex, inputData, KMShield.muxReadings[mux][muxChannel]);
         }
@@ -661,35 +661,48 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
                                                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   if(!configMode){
-    if (analog) {
+    if (analog) {   // ANALOG INPUTS
       if (mode == KMS::M_NRPN){
         minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
         maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
-        mapValue = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, minMidiNRPN, maxMidiNRPN);
-        int maxMinDiff = maxMidiNRPN - minMidiNRPN;   // abs() doesn't like math operations inside the parameter brackets (https://www.arduino.cc/en/Reference/Abs)
-        noiseTh = abs(maxMinDiff) >> 7;               // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
-        if (IsNoise(mapValue, prevValue[numInput], numInput, true, noiseTh)) 
-          return;
+        
+        int maxMinDiff = maxMidiNRPN - minMidiNRPN;
+        byte maxMidiNRPNadd = abs(maxMinDiff)>>10;
+        
+        if(minMidi < maxMidi){
+          mapValue = map(value, 0, 1024, minMidiNRPN, maxMidiNRPN + maxMidiNRPNadd + 1); // map() only maps correctly if fromHigh and toHigh are +1 the actual mapped values
+          if (mapValue == maxMidiNRPN-1) mapValue += 1;
+        }
+        else{
+          mapValue = map(value, 0, 1024, minMidiNRPN, maxMidiNRPN - maxMidiNRPNadd - 1); // map() only maps correctly if fromHigh and toHigh are +1 the actual mapped values
+        }
+        
+        noiseTh = abs(maxMinDiff) >> 8;               // divide range to get noise threshold. Max is 16383/128 = 127
+        
+        if (IsNoise(mapValue, prevValue[numInput], numInput, true, noiseTh)) return;      // If new reading is noise, then discard reading
       }else{
-        mapValue = map(value, 0, 127, minMidi, maxMidi); 
+        if(minMidi < maxMidi)
+          mapValue = map(value, 0, 128, minMidi, maxMidi+1); 
+        else
+          mapValue = map(value, 0, 128, minMidi, maxMidi-1); 
+          
         int maxMinDiff = maxMidi - minMidi;           // abs() doesn't like math operations inside the parameter brackets (https://www.arduino.cc/en/Reference/Abs)
         noiseTh = abs(maxMinDiff) >> 6;               // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
-        if (IsNoise(mapValue, prevValue[numInput], numInput, false, noiseTh)) 
-          return;
+        if (IsNoise(mapValue, prevValue[numInput], numInput, false, noiseTh)) return;     // If new reading is noise, then discard reading
       }
-      prevValue[numInput] = mapValue;
+      prevValue[numInput] = mapValue;   // Save value to previous data array
     }
-    else {
-      if (value)  mapValue = minMidi;
-      else        mapValue = maxMidi;
+    else {      // DIGITAL INPUTS
+      if (value)  mapValue = minMidi;   // If value is != 0, then button is off
+      else        mapValue = maxMidi;   // If value is == 0, the button is on (active LOW)
     }  
   }
   
 #if defined(MIDI_COMMS)
   if (configMode) {
-    if (IsNoise(value, prevValue[numInput], numInput, false, noiseTh)) 
+    if (IsNoise(value, prevValue[numInput], numInput, false, 1)) 
       return;
-    value = map(value, 0, mode == KMS::M_NRPN ? 1023 : 127, 0, 127);
+    value = map(value, 0, mode == KMS::M_NRPN ? 1024 : 128, 0, 128);
     MIDI.sendControlChange( numInput, value, 1);
   }
   else {    // CONFIG MODE MESSAGES - ONLY CC FOR ANALOG INPUTS AND NOTES FOR DIGITAL INPUTS
