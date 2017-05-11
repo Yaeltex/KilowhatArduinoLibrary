@@ -680,7 +680,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
         noiseTh = abs(maxMinDiff) >> 8;               // divide range to get noise threshold. Max is 16383/128 = 127
         
         if (IsNoise(mapValue, prevValue[numInput], numInput, true, noiseTh)) return;      // If new reading is noise, then discard reading
-      }else{
+      }else{    // NOT NRPN
         if(minMidi < maxMidi)
           mapValue = map(value, 0, 128, minMidi, maxMidi+1); 
         else
@@ -754,24 +754,24 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
 
    Recibe: -
 */
-uint16_t IsNoise(uint16_t curremtValue, uint16_t prevValue, uint16_t input, bool nrpn, byte noiseTh) {
+uint16_t IsNoise(uint16_t currentValue, uint16_t prevValue, uint16_t input, bool nrpn, byte noiseTh) {
   static bool upOrDown[NUM_MUX * NUM_MUX_CHANNELS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
   if (upOrDown[input] == ANALOG_UP) {
-    if (curremtValue > prevValue) {            // Si el valor está creciendo, y la nueva lectura es mayor a la anterior,
+    if (currentValue > prevValue) {            // Si el valor está creciendo, y la nueva lectura es mayor a la anterior,
       return 0;                        // no es ruido.
     }
-    else if (curremtValue < prevValue - noiseTh) { // Si el valor está creciendo, y la nueva lectura menor a la anterior menos el UMBRAL
+    else if (currentValue < prevValue - noiseTh) { // Si el valor está creciendo, y la nueva lectura menor a la anterior menos el UMBRAL
       upOrDown[input] = ANALOG_DOWN;                                     // se cambia el estado a DECRECIENDO y
       return 0;                                                               // no es ruido.
     }
   }
   if (upOrDown[input] == ANALOG_DOWN) {
-    if (curremtValue < prevValue) { // Si el valor está decreciendo, y la nueva lectura es menor a la anterior,
+    if (currentValue < prevValue) { // Si el valor está decreciendo, y la nueva lectura es menor a la anterior,
       return 0;                                        // no es ruido.
     }
-    else if (curremtValue > prevValue + noiseTh) {  // Si el valor está decreciendo, y la nueva lectura mayor a la anterior mas el UMBRAL
+    else if (currentValue > prevValue + noiseTh) {  // Si el valor está decreciendo, y la nueva lectura mayor a la anterior mas el UMBRAL
       upOrDown[input] = ANALOG_UP;                                       // se cambia el estado a CRECIENDO y
       return 0;                                                               // no es ruido.
     }
