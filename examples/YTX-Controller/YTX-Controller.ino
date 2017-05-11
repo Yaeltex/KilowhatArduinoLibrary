@@ -699,11 +699,12 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   }
   
 #if defined(MIDI_COMMS)
-  if (configMode) {
-    if (IsNoise(value, prevValue[numInput], numInput, false, 1)) 
+  if (configMode) { // CONFIG MODE MESSAGES
+    mapValue = map(value, 0, 1024, 0, 128);
+    if (IsNoise(mapValue, prevValue[numInput], numInput, false, 1)) 
       return;
-    value = map(value, 0, mode == KMS::M_NRPN ? 1024 : 128, 0, 128);
-    MIDI.sendControlChange( numInput, value, 1);
+    prevValue[numInput] = mapValue;   // Save value to previous data array
+    MIDI.sendControlChange( numInput, mapValue, 1);
   }
   else {    // CONFIG MODE MESSAGES - ONLY CC FOR ANALOG INPUTS AND NOTES FOR DIGITAL INPUTS
     switch (mode) {
@@ -737,6 +738,11 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
     }
   }
 #else    
+  if (configMode) { // CONFIG MODE MESSAGES
+    mapValue = map(value, 0, 1024, 0, 128);
+    if (IsNoise(mapValue, prevValue[numInput], numInput, false, 1)) 
+      return;
+  }
   Serial.print("Channel: "); Serial.print(channel); Serial.print("\t");
   Serial.print("Tipo: "); Serial.print(inputData.AD() ? "Analog" : "Digital"); Serial.print("\t");
   Serial.print("Min: "); Serial.print(minMidi); Serial.print("\t");
