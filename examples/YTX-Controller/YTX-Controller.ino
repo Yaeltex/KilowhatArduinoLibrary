@@ -153,8 +153,13 @@ void setup() {
 void loop() {
    //unsigned long antMicrosLoop = micros();
 #if defined(MIDI_COMMS)
-  if (MIDI.read())
+  if (MIDI.read()){
     ReadMidi();
+  }
+#else
+  if (Serial.available()){
+    ReadSerial();
+  }
 #endif
 
   if (!firstBoot) {
@@ -382,7 +387,20 @@ void ReadMidi(void) {
       break;
   }
 }
+#else
+void ReadSerial(){
+  char inChar = (char) Serial.read();
+  if (inChar == 'c' && !configMode) {
+    //configMode = true;
+    ResetConfig(CONFIG_ON);
+  }
+  else if (inChar == 'x' && configMode) {
+    //configMode = false;
+    ResetConfig(CONFIG_OFF);
+  }
+}
 #endif
+
 #if defined(MIDI_COMMS)
 void HandleNotes() {
   byte data1, data2, channel;
@@ -452,9 +470,9 @@ void ReadSensorUS() {
   }
   
   if (sensorActive) {                                     // Si el sensor está activado
-    if (millis() >= pingSensorTimer) {   // y transcurrió el delay minimo entre lecturas
+    if (millis() >= pingSensorTimer) {                      // y transcurrió el delay minimo entre lecturas
       pingSensorTimer += pingSensorInterval;
-      usSensor.ping_timer(EchoCheck);                           // Sensar el tiempo que tarda el pulso de ultrasonido en volver. Se recibe el valor el us.
+      usSensor.ping_timer(EchoCheck);                       // Sensar el tiempo que tarda el pulso de ultrasonido en volver. Se recibe el valor el us.
     }
   }else
     pingSensorTimer = millis() + pingSensorInterval;
@@ -462,11 +480,11 @@ void ReadSensorUS() {
 }
 
 void EchoCheck(){
-  uint8_t rc = usSensor.check_timer();
-  if(rc != 0){
-    uSeg = usSensor.ping_result;
-    uSeg = constrain(uSeg, minMicroSecSensor, maxMicroSecSensor);
-    uint16_t sensorRange = maxMicroSecSensor - minMicroSecSensor;
+  uint8_t rc = usSensor.check_timer();        
+  if(rc != 0){                            // el resultado es distinto de 0 si hay un pulso
+    uSeg = usSensor.ping_result;          // me traigo el tiempo en microsegundos de retorno del pulso
+    uSeg = constrain(uSeg, minMicroSecSensor, maxMicroSecSensor);     // lo limito dentro del rango posible segun la distancia configurada  
+    uint16_t sensorRange = maxMicroSecSensor - minMicroSecSensor;     
     uint16_t usSensorValue = map(uSeg, minMicroSecSensor, maxMicroSecSensor+1, 0, sensorRange+1);  
     uint16_t minMidiNRPN, maxMidiNRPN;
     byte mode = ultrasonicSensorData.mode();
@@ -483,7 +501,6 @@ void EchoCheck(){
       usSensorValue = map(usSensorValue, 0, 128, minMidi, maxMidi+1); 
     }
     
-
     // FILTRO DE MEDIA MÓVIL PARA SUAVIZAR LA LECTURA
     usSensorValue = FilterGetNewAverage(usSensorValue);
     
@@ -605,10 +622,7 @@ void ReadInputs() {
         else{
           KMShield.muxReadings[mux][muxChannel] = KMShield.analogReadKm(mux, muxChannel) >> 3;      // Si no es NRPN, leer entradas analógicas 'KMShield.analogReadKm(N_MUX,N_CANAL)'
         }
-        //if (inputIndex == 9){
-          //Serial.println(KMShield.muxReadings[mux][muxChannel]);
-        //}
-        // El valor leido va de 0-1023. Convertimos a 0-127, dividiendo por 8.
+        // El valor leido va de 0-1023.
         if (!firstRead && KMShield.muxReadings[mux][muxChannel] != KMShield.muxPrevReadings[mux][muxChannel]) {  // Si leo algo distinto a lo anterior
           // Enviar mensaje.
           InputChanged(inputIndex, inputData, KMShield.muxReadings[mux][muxChannel]);
@@ -700,7 +714,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   
 #if defined(MIDI_COMMS)
   if (configMode) { // CONFIG MODE MESSAGES
-    mapValue = map(value, 0, 1024, 0, 128);
+    mapValue =  map(value, 0, mode == KMS::M_NRPN ? 1024 : 128, 0, 128);
     if (IsNoise(mapValue, prevValue[numInput], numInput, false, 1)) 
       return;
     prevValue[numInput] = mapValue;   // Save value to previous data array
