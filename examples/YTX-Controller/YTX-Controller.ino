@@ -11,7 +11,7 @@
    Librería para el manejo del sensor de ultrasonido tomada de http://playground.arduino.cc/Code/NewPing
 
    Este código fue desarrollado para el KILO MUX SHIELD desarrolado en conjunto por Yaeltex y el Laboratorio del Juguete, en Buenos Aires, Argentina,
-   apuntando al desarrollo de controladores MIDI con arduino.
+   apuntando al desarrollo de controladores MIDI con Arduino.
    Está preparado para manejar 2 (expandible) registros de desplazamiento 74HC595 conectados en cadena (16 salidas digitales en total),
    y 2 multiplexores CD4067 de 16 canales cada uno (16 entradas analógicas, y 16 entradas digitales), pero es expandible en el
    caso de utilizar hardware diferente. Para ello se modifican los "define" NUM_MUX, NUM_CANALES_MUX y NUM_595s.
@@ -117,12 +117,12 @@ byte mux, muxChannel;                       // Contadores para recorrer los mult
 byte numBanks, numInputs, numOutputs;
 byte prevBank, currBank = 0;
 bool ledModeMatrix, newBank, changeDigOutState, ultrasoundPresent;
-bool firstBoot = false, firstRead = true;
-bool flagBlinkStatus = 0, configMode = 0, receivingSysEx = 0;
+bool configurationValid = true, firstRead = true;
+bool flagBlinkStatusLED = 0, configMode = 0, receivingSysEx = 0;
 bool outputBlinkState = 0;
 unsigned long millisPrevLED = 0;               // Variable para guardar ms
-static byte blinkCountStatus = 0;
-uint16_t packetSize;
+static byte blinkCountStatusLED = 0;
+uint16_t dataPacketSize;
 unsigned long prevBlinkMillis = 0;
 ///////////////////////////////////////////////////////////////////////////////////////////
 
@@ -150,6 +150,17 @@ void setup() {
   ResetConfig(CONFIG_OFF);
 }
 
+/*
+    Loop principal.
+    Lee MIDI o Serial.
+    Si la configuración en EEPROM es válida (configuración por Kilowhat)
+      Actualiza el LED de estado.
+      Actualiza las salidas del Kilomux.
+      Lee el sensor de ultrasonido.
+      Lee las entradas del Kilomux y envía mensajes MIDI si corresponde.
+    Si la configuración en EEPROM no es válida
+      LED de estado intermitente cada medio segundo.
+*/
 void loop() {
    //unsigned long antMicrosLoop = micros();
 #if defined(MIDI_COMMS)
@@ -162,8 +173,8 @@ void loop() {
   }
 #endif
 
-  if (!firstBoot) {
-    if (flagBlinkStatus && blinkCountStatus) blinkStatusLED();
+  if (configurationValid) {
+    if (flagBlinkStatusLED && blinkCountStatusLED) blinkStatusLED();
     
     if (!receivingSysEx){
       UpdateDigitalOutputs();
@@ -178,15 +189,18 @@ void loop() {
   }
   else{
     if(!(millis() % 500)){
-      flagBlinkStatus = 1;
-      blinkCountStatus = 1;
+      flagBlinkStatusLED = 1;
+      blinkCountStatusLED = 1;
     }
-    if (flagBlinkStatus && blinkCountStatus) blinkStatusLED();
+    if (flagBlinkStatusLED && blinkCountStatusLED) blinkStatusLED();
     ReadInputs(); 
-  }
-  
+  } 
 }
 
+/*
+    newConfig:  0 - Reset en modo normal.
+                1 - Reset em modo de configuración.
+*/
 void ResetConfig(bool newConfig) {
   pinMode(LED_BUILTIN, OUTPUT);
   // Reload global data from EEPROM
@@ -198,11 +212,10 @@ void ResetConfig(bool newConfig) {
   firstRead = true;
 
   if (gD.isValid()) {
-    
     if (gD.protocolVersion() == 1){
-      packetSize = 57;
+      dataPacketSize = 57; // 64 SysEx packets. 7 Header bytes - 57 data bytes   
     }else{
-      packetSize = 57; // Default.
+      dataPacketSize = 57; // Default.
     }
    
     ledModeMatrix = gD.hasOutputMatrix();
@@ -211,6 +224,14 @@ void ResetConfig(bool newConfig) {
     numOutputs = gD.numOutputs();
     ultrasonicSensorData = KMS::ultrasound();
     ultrasoundPresent = ultrasonicSensorData.mode() != KMS::M_OFF;
+    
+     #if !defined(MIDI_COMMS)
+    Serial.print("Numero de bancos: "); Serial.println(numBanks);
+    Serial.print("Numero de entradas: "); Serial.println(numInputs);
+    Serial.print("Numero de salidas: "); Serial.println(numOutputs);
+    Serial.print("Sensor mode: "); Serial.println(MODE_LABEL(ultrasonicSensorData.mode()));
+    #endif
+    
     if (ultrasoundPresent) {
       FilterClear();
       minMicroSecSensor = ultrasonicSensorData.dist_min() * US_ROUNDTRIP_CM;
@@ -224,19 +245,13 @@ void ResetConfig(bool newConfig) {
       pinMode(ActivateSensorLedPin, OUTPUT);
       digitalWrite(ActivateSensorLedPin, LOW);
     }
-#if !defined(MIDI_COMMS)
-    Serial.print("Numero de bancos: "); Serial.println(numBanks);
-    Serial.print("Numero de entradas: "); Serial.println(numInputs);
-    Serial.print("Numero de salidas: "); Serial.println(numOutputs);
-    Serial.print("Sensor mode: "); Serial.println(MODE_LABEL(ultrasonicSensorData.mode()));
-#endif
   }
   else {
-#if !defined(MIDI_COMMS)
-    Serial.print("Datos en EEPROM no válidos");
-#endif
-    firstBoot = true;
-    packetSize = 57;
+    configurationValid = false;
+    dataPacketSize = 57;
+    #if !defined(MIDI_COMMS)
+      Serial.print("Datos en EEPROM no válidos");
+    #endif
   }
   
   // Inicializar lecturas
@@ -258,6 +273,11 @@ void ResetConfig(bool newConfig) {
   changeDigOutState = true;
 }
 
+/*
+    Esta función es llamada por el loop principal, cuando las variables flagBlinkStatusLED y blinkCountStatusLED son distintas de cero.
+    blinkCountStatusLED tiene la cantidad de veces que debe titilar el LED.
+    El intervalo es fijo y dado por la etiqueta 'STATUS_BLINK_INTERVAL'
+*/ 
 void blinkStatusLED() {
   static bool lastLEDState = LOW;
   static unsigned long millisPrev = 0;
@@ -271,9 +291,9 @@ void blinkStatusLED() {
     millisPrev = millis();
     digitalWrite(13, !lastLEDState);
     lastLEDState = !lastLEDState;
-    if (lastLEDState == LOW) blinkCountStatus--;
-    if (!blinkCountStatus) {
-      flagBlinkStatus = 0;
+    if (lastLEDState == LOW) blinkCountStatusLED--;
+    if (!blinkCountStatusLED) {
+      flagBlinkStatusLED = 0;
       firstTime = true;
     }
   }
@@ -281,6 +301,9 @@ void blinkStatusLED() {
   return;
 }
 
+/*
+    Si se los flags 'newBank' o 'changeDigOutState' se marcaron, se actualizan los estados de las salidas digitales.
+*/ 
 void UpdateDigitalOutputs() {
   uint16_t dOut = 0;
   if (newBank || changeDigOutState) {
@@ -301,10 +324,18 @@ void UpdateDigitalOutputs() {
             KMShield.digitalWriteKm(dOut, LOW);
         }
       }
+    } 
+    else{
+      // Próximamente acá estará el código para manejar salidas en forma matricial, y así controlar hasta 64 salidas!
     }
   }
 }
 
+/*
+    Actualiza el estado de las salidas intermitentes.
+    Se actualizan todas las salidas al mismo tiempo.
+    La intermitencia tiene un intervalo fijo, dado por la etiqueta 'OUTPUT_BLINK_INTERVAL' 
+*/ 
 void ToggleBlinkOutputs(void) {
   uint16_t dOut = 0;
   for (dOut = 0; dOut < numOutputs; dOut++) {                   // Recorrer todos los LEDs
@@ -322,7 +353,12 @@ void ToggleBlinkOutputs(void) {
 }
 
 #if defined(MIDI_COMMS)
-// Lee el canal midi, note y velocity, y actualiza el estado de los leds.
+/*
+    Esta función se encarga de recibir mensajes MIDI.
+    Notes ->  Actualizar salidas
+    SysEx ->  Entrada y salida del modo de configuración
+              Nueva configuración en la EEPROM.
+*/  
 void ReadMidi(void) {
   switch (MIDI.getType()) {
     case midi::NoteOn:
@@ -347,15 +383,15 @@ void ReadMidi(void) {
 
         if (command == CONFIG_MODE && !configMode) {           // Enter config mode
           //MIDI.turnThruOff();
-          flagBlinkStatus = 1;
-          blinkCountStatus = 1;
+          flagBlinkStatusLED = 1;
+          blinkCountStatusLED = 1;
           const byte configAckSysExMsg[5] = {'Y', 'T', 'X', CONFIG_ACK, 0};
           MIDI.sendSysEx(5, configAckSysExMsg, false);
           ResetConfig(CONFIG_ON);
         }
-        else if (command == EXIT_CONFIG && configMode) {           // Enter config mode
-          flagBlinkStatus = 1;
-          blinkCountStatus = 1;
+        else if (command == EXIT_CONFIG && configMode) {       // Enter config mode
+          flagBlinkStatusLED = 1;
+          blinkCountStatusLED = 1;
           const byte configAckSysExMsg[5] = {'Y', 'T', 'X', EXIT_CONFIG_ACK, 0};
           MIDI.sendSysEx(5, configAckSysExMsg, false);
           //MIDI.turnThruOn();
@@ -366,15 +402,15 @@ void ReadMidi(void) {
             receivingSysEx = 1;
           }
 
-          KMS::io.write(packetSize * pMsg[5], pMsg + 6, sysexLength - 7); // pMsg has index in byte 6, total sysex packet has max.
+          KMS::io.write(dataPacketSize * pMsg[5], pMsg + 6, sysexLength - 7); // pMsg has index in byte 6, total sysex packet has max.
           // |F0, 'Y' , 'T' , 'X', command, index, F7|
-          flagBlinkStatus = 1;
-          blinkCountStatus = 1;
+          flagBlinkStatusLED = 1;
+          blinkCountStatusLED = 1;
 
-          if (sysexLength < packetSize + 7) { // Last message?
+          if (sysexLength < dataPacketSize + 7) { // Last message?
             receivingSysEx = 0;
-            flagBlinkStatus = 1;
-            blinkCountStatus = 3;
+            flagBlinkStatusLED = 1;
+            blinkCountStatusLED = 3;
             const byte dumpOkMsg[5] = {'Y', 'T', 'X', DUMP_OK, 0};
             MIDI.sendSysEx(5, dumpOkMsg, false);
             const byte configAckSysExMsg[5] = {'Y', 'T', 'X', EXIT_CONFIG_ACK, 0};
@@ -388,6 +424,11 @@ void ReadMidi(void) {
   }
 }
 #else
+/*
+    Usada para poder acceder al modo de configuración a través del terminal Serial.
+    Con la tecla 'c' se accede al modo de configuración.
+    Con la tecla 'x' se sale del modo de configuración.
+*/
 void ReadSerial(){
   char inChar = (char) Serial.read();
   if (inChar == 'c' && !configMode) {
@@ -401,6 +442,11 @@ void ReadSerial(){
 }
 #endif
 
+/*
+    Al recibir un mensaje de tipo NOTE, se determina si la nota corresponde a alguna salida del banco actual.
+    En ese caso, se actualiza el estado de la misma y se enciente el flag para que la función 'UpdateDigitalOutputs()'
+    la encienda o lo apague.
+*/
 #if defined(MIDI_COMMS)
 void HandleNotes() {
   byte data1, data2, channel;
@@ -444,6 +490,14 @@ void HandleNotes() {
 }
 #endif
 
+/*
+    Verifica si el sensor de ultrasonido está activado y maneja el LED indicador.
+    Si está activado, la librería NewPing envía un pulso de ultrasonido en forma periódica 
+    y espera recibir uno de vuelta, al rebotar en un objeto.
+    Se calcula luego el tiempo que tarda en ir y volver y con ello se determina la distancia al objeto.
+    Diagrama de conexión del sensor de ultrasonido: http://wiki.yaeltex.com.ar/index.php?title=Kilomux_Shield#Sensor_de_Ultrasonido_.28J1.29
+    
+*/
 void ReadSensorUS() {
   static uint16_t prevMillisUltraSensor = 0;    // Variable usada para almacenar los milisegundos desde el último Ping al sensor
   static bool activateSensorButtonPrevState = HIGH;                // Inicializo inactivo (entrada activa baja)
@@ -479,6 +533,11 @@ void ReadSensorUS() {
   
 }
 
+/*
+    Esta función se llama cada un intervalo definido por la variable 'pingSensorInterval'.
+    Verifica la lectura de un pulso de ultrasonido, y en caso que exista, formatea el 
+    mensaje MIDI a enviar, según la configuración existente en la EEPROM.
+*/
 void EchoCheck(){
   uint8_t rc = usSensor.check_timer();        
   if(rc != 0){                            // el resultado es distinto de 0 si hay un pulso
@@ -532,12 +591,11 @@ void EchoCheck(){
       #endif
     }
   }
-  else{
-    
-  }
 }
 
-// Running average filter (from RunningAverage arduino lib, but without the lib)
+/*
+    Filtro de media móvil para el sensor de ultrasonido (librería RunningAverage integrada) (http://playground.arduino.cc/Main/RunningAverage)
+*/
 uint16_t FilterGetNewAverage(uint16_t newVal){
   filterSum -= filterSamples[filterIndex];
   filterSamples[filterIndex] = newVal;
@@ -552,6 +610,9 @@ uint16_t FilterGetNewAverage(uint16_t newVal){
   return filterSum / filterCount;
 }
 
+/*
+   Limpia los valores del filtro de media móvil para un nuevo uso.
+*/
 void FilterClear(){
   filterCount = 0;
   filterIndex = 0;
@@ -560,9 +621,10 @@ void FilterClear(){
     filterSamples[i] = 0; // keeps addValue simpler
   }
 }
+
 /*
-   Esta función lee todas las entradas análógicas y/o digitales y almacena los valores de cada una en la matriz 'lecturas'.
-   Compara con los valores previos, almacenados en 'lecturasPrev', y si cambian, y llama a las funciones que envían datos.
+   Esta función lee todas las entradas análógicas y/o digitales y almacena los valores de cada una en el array de 'lecturas'.
+   Compara con los valores previos, almacenados en 'lecturasPrev', y si cambian, y llama a la función InputChanged().
 */
 void ReadInputs() {
   static uint16_t currAnalogValue = 0, prevAnalogValue = 0;
@@ -661,6 +723,10 @@ void ReadInputs() {
   firstRead = false;
 }
 
+/*
+   Esta función se encarga de analizar si el cambio en la entrada es ruido o es un cambio válido.
+   Luego se encarga de darle formato al mensaje MIDI a enviar, según la configuración en la EEPROM.
+*/
 void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value) {
   byte mode = inputData.mode();
   bool analog = inputData.AD();       // 1 is analog
