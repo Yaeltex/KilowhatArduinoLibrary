@@ -39,6 +39,11 @@ class GlobalData {
     bool hasOutputMatrix() const {
       return (_p[12] & 1) != 0;
     }
+	
+	//Is MIDI Thru on?
+    bool midiThru() const {
+      return ((_p[12]>>1) & 1) != 0;
+    }
 
     //Number of banks
     byte numBanks() const {
