@@ -35,7 +35,7 @@
 
 void setup(); // Esto es para solucionar el bug que tiene Arduino al usar los #ifdef del preprocesador
 
-#define MIDI_COMMS
+//#define MIDI_COMMS
 
 #if defined(MIDI_COMMS)
 struct MySettings : public midi::DefaultSettings
@@ -74,11 +74,6 @@ static const char * const modeLabels[] = {
 #define CONFIG_OFF 0
 #define CONFIG_ON 1
 
-// ANALOG FILTER ADJUSTMENTS
-// AJUSTABLE - Si hay ruido que varía entre valores (+- 1, +- 2, +- 3...) colocar el umbral en (1, 2, 3...)
-#define NOISE_THRESHOLD             1                      // Ventana de ruido para las entradas analógicas. Si entrada < entrada+umbral o 
-#define NOISE_THRESHOLD_NRPN        4                      // Ventana de ruido para las entradas analógicas. Si entrada < entrada+umbral o 
-
 #define ANALOG_UP     1
 #define ANALOG_DOWN   0
 
@@ -108,7 +103,7 @@ Kilomux KMShield;                                       // Objeto de la clase Ki
 NewPing usSensor(SensorTriggerPin, SensorEchoPin, MAX_SENSOR_DISTANCE); // Instancia de NewPing para el sensor US.
 
 // Digital input and output states
-bool digitalInputState[MAX_BANKS][NUM_MUX * NUM_MUX_CHANNELS]; // Estado de los botones
+bool digitalInputState[MAX_BANKS][NUM_MUX * NUM_MUX_CHANNELS]; // Estado de los botones - si no se usan entradas digitales, se pueden achicar estos arrays
 byte digitalOutState[MAX_BANKS][NUM_MUX * NUM_MUX_CHANNELS]; // Estado de los botones
 byte currentProgram[MAX_BANKS][16] = {};
 
@@ -116,7 +111,7 @@ byte currentProgram[MAX_BANKS][16] = {};
 byte mux, muxChannel;                       // Contadores para recorrer los multiplexores
 byte numBanks, numInputs, numOutputs;
 byte prevBank, currBank = 0;
-bool ledModeMatrix, newBank, changeDigOutState, ultrasoundPresent;
+bool ledModeMatrix, newBank, changeDigOutState, ultrasoundPresent, midiThru;
 bool configurationValid = true, firstRead = true;
 bool flagBlinkStatusLED = 0, configMode = 0, receivingSysEx = 0;
 bool outputBlinkState = 0;
@@ -224,11 +219,20 @@ void ResetConfig(bool newConfig) {
     numOutputs = gD.numOutputs();
     ultrasonicSensorData = KMS::ultrasound();
     ultrasoundPresent = ultrasonicSensorData.mode() != KMS::M_OFF;
+    midiThru = gD.midiThru();
+
+    #if defined(MIDI_COMMS)
+    if (midiThru)
+      MIDI.turnThruOn();             // Turn midi thru on, because configuration says so
+    else
+      MIDI.turnThruOff();            // Turn midi thru off, because configuration says so
+    #endif
     
      #if !defined(MIDI_COMMS)
     Serial.print("Numero de bancos: "); Serial.println(numBanks);
     Serial.print("Numero de entradas: "); Serial.println(numInputs);
     Serial.print("Numero de salidas: "); Serial.println(numOutputs);
+    Serial.print("MIDI thru? "); Serial.println(midiThru ? "SI" : "NO");
     Serial.print("Sensor mode: "); Serial.println(MODE_LABEL(ultrasonicSensorData.mode()));
     #endif
     
@@ -400,6 +404,7 @@ void ReadMidi(void) {
         else if (command == DUMP_TO_HW) {           // Save dump data
           if (!receivingSysEx) {
             receivingSysEx = 1;
+            MIDI.turnThruOff();
           }
 
           KMS::io.write(dataPacketSize * pMsg[5], pMsg + 6, sysexLength - 7); // pMsg has index in byte 6, total sysex packet has max.
@@ -678,13 +683,8 @@ void ReadInputs() {
         }
       }
       else if (inputData.AD() == KMS::T_ANALOG) {
-        if (inputData.mode() == KMS::M_NRPN){
-          KMShield.muxReadings[mux][muxChannel] = KMShield.analogReadKm(mux, muxChannel);           // Si es NRPN leer entradas analógicas 'KMShield.analogReadKm(N_MUX,N_CANAL)'
-        }  
-        else{
-          KMShield.muxReadings[mux][muxChannel] = KMShield.analogReadKm(mux, muxChannel) >> 3;      // Si no es NRPN, leer entradas analógicas 'KMShield.analogReadKm(N_MUX,N_CANAL)'
-        }
-        // El valor leido va de 0-1023.
+        KMShield.muxReadings[mux][muxChannel] = KMShield.analogReadKm(mux, muxChannel);           // Si es NRPN leer entradas analógicas 'KMShield.analogReadKm(N_MUX,N_CANAL)'
+        
         if (!firstRead && KMShield.muxReadings[mux][muxChannel] != KMShield.muxPrevReadings[mux][muxChannel]) {  // Si leo algo distinto a lo anterior
           // Enviar mensaje.
           InputChanged(inputIndex, inputData, KMShield.muxReadings[mux][muxChannel]);
@@ -727,7 +727,7 @@ void ReadInputs() {
    Esta función se encarga de analizar si el cambio en la entrada es ruido o es un cambio válido.
    Luego se encarga de darle formato al mensaje MIDI a enviar, según la configuración en la EEPROM.
 */
-void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value) {
+void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t rawValue) {
   byte mode = inputData.mode();
   bool analog = inputData.AD();       // 1 is analog
   byte param = inputData.param_fine();
@@ -735,55 +735,67 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   byte minMidi = inputData.param_min();
   byte maxMidi = inputData.param_max();
   uint16_t minMidiNRPN, maxMidiNRPN;
-  uint16_t mapValue;
+  uint16_t mapValue, constrainedValue;
   uint16_t noiseTh;
-  static uint16_t prevValue[NUM_MUX * NUM_MUX_CHANNELS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                                           0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  static uint16_t prevValue[NUM_MUX * NUM_MUX_CHANNELS] = {};
+  static uint16_t prevRawValue[NUM_MUX * NUM_MUX_CHANNELS] = {};
 
-  if(!configMode){
-    if (analog) {   // ANALOG INPUTS
-      if (mode == KMS::M_NRPN){
+  #define CONST_LOW_LIMIT   2
+  #define CONST_HIGH_LIMIT  1021
+                                                                                       
+  if (!configMode) {
+    if (analog) {
+      constrainedValue = constrain(rawValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT);
+      if (IsNoise(constrainedValue, prevRawValue[numInput], numInput, 2, true)) 
+        return;                                                           
+      prevRawValue[numInput] = constrainedValue;  
+      //Serial.print("Raw value: "); Serial.print(constrainedValue); Serial.println();
+      if (mode == KMS::M_NRPN) {
         minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
         maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
-        
+
         int maxMinDiff = maxMidiNRPN - minMidiNRPN;
-        byte maxMidiNRPNadd = abs(maxMinDiff)>>10;
+        byte maxMidiNRPNadd = abs(maxMinDiff) >> 10;
+
+        mapValue = map(constrainedValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT, minMidiNRPN, maxMidiNRPN); // map() only maps correctly if fromHigh and toHigh are +1 the actual mapped values
+
+        noiseTh = abs(maxMinDiff) >> 8;          // divide range to get noise threshold. Max th is 127/4 = 64 : Min th is 0.
         
-        if(minMidi < maxMidi){
-          mapValue = map(value, 0, 1024, minMidiNRPN, maxMidiNRPN + maxMidiNRPNadd + 1); // map() only maps correctly if fromHigh and toHigh are +1 the actual mapped values
-          if (mapValue == maxMidiNRPN-1) mapValue += 1;
+        if(maxMinDiff < 1023){
+          if (IsNoise(mapValue, prevValue[numInput], numInput, noiseTh, false))
+            return;
         }
-        else{
-          mapValue = map(value, 0, 1024, minMidiNRPN, maxMidiNRPN - maxMidiNRPNadd - 1); // map() only maps correctly if fromHigh and toHigh are +1 the actual mapped values
-        }
-        
-        noiseTh = abs(maxMinDiff) >> 8;               // divide range to get noise threshold. Max is 16383/128 = 127
-        
-        if (IsNoise(mapValue, prevValue[numInput], numInput, true, noiseTh)) return;      // If new reading is noise, then discard reading
-      }else{    // NOT NRPN
-        if(minMidi < maxMidi)
-          mapValue = map(value, 0, 128, minMidi, maxMidi+1); 
-        else
-          mapValue = map(value, 0, 128, minMidi, maxMidi-1); 
-          
-        int maxMinDiff = maxMidi - minMidi;           // abs() doesn't like math operations inside the parameter brackets (https://www.arduino.cc/en/Reference/Abs)
-        noiseTh = abs(maxMinDiff) >> 6;               // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
-        if (IsNoise(mapValue, prevValue[numInput], numInput, false, noiseTh)) return;     // If new reading is noise, then discard reading
+      } else {
+        mapValue = map(constrainedValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT, minMidi, maxMidi);
+        int maxMinDiff = maxMidi - minMidi;
+        noiseTh = abs(maxMinDiff) >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
+        if (IsNoise(mapValue, prevValue[numInput], numInput, 0, false))
+          return;
       }
       prevValue[numInput] = mapValue;   // Save value to previous data array
     }
     else {      // DIGITAL INPUTS
-      if (value)  mapValue = minMidi;   // If value is != 0, then button is off
-      else        mapValue = maxMidi;   // If value is == 0, the button is on (active LOW)
-    }  
+      if (rawValue)  mapValue = minMidi;   // If value is != 0, then button is off
+      else           mapValue = maxMidi;   // If value is == 0, the button is on (active LOW)
+    }
   }
   
 #if defined(MIDI_COMMS)
   if (configMode) { // CONFIG MODE MESSAGES
-    mapValue =  map(value, 0, mode == KMS::M_NRPN ? 1024 : 128, 0, 128);
-    if (IsNoise(mapValue, prevValue[numInput], numInput, false, 1)) 
-      return;
-    prevValue[numInput] = mapValue;   // Save value to previous data array
+    if(analog){
+      constrainedValue = constrain(rawValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT);
+      if (IsNoise(constrainedValue, prevRawValue[numInput], numInput, 2, true)) 
+        return;                                                           
+      prevRawValue[numInput] = constrainedValue;
+      mapValue = map(constrainedValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT, 0, 127);
+      if (IsNoise(mapValue, prevValue[numInput], numInput, 0, false))
+        return;
+      prevValue[numInput] = mapValue;   // Save value to previous data array
+    }else {      // DIGITAL INPUTS
+      if (rawValue)  mapValue = 0;   // If value is != 0, then button is off
+      else           mapValue = 127;   // If value is == 0, the button is on (active LOW)
+    }
+    
     MIDI.sendControlChange( numInput, mapValue, 1);
   }
   else {    // CONFIG MODE MESSAGES - ONLY CC FOR ANALOG INPUTS AND NOTES FOR DIGITAL INPUTS
@@ -803,7 +815,7 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
           MIDI.sendProgramChange(currentProgram[currBank][channel-1], channel); 
         } break;
       case KMS::M_PROGRAM:
-        if (!analog && value > 0) {
+        if (!analog && rawValue > 0) {
           MIDI.sendProgramChange( param, channel);
         } 
         else if (analog){
@@ -819,16 +831,28 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
   }
 #else    
   if (configMode) { // CONFIG MODE MESSAGES
-    mapValue = map(value, 0, 1024, 0, 128);
-    if (IsNoise(mapValue, prevValue[numInput], numInput, false, 1)) 
-      return;
+    if(analog){
+      constrainedValue = constrain(rawValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT);
+      if (IsNoise(constrainedValue, prevRawValue[numInput], numInput, 2, true)) 
+        return;                                                           
+      prevRawValue[numInput] = constrainedValue;
+      mapValue = map(constrainedValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT, 0, 127);    
+      if (IsNoise(mapValue, prevValue[numInput], numInput, 0, false))
+        return;
+    }else {      // DIGITAL INPUTS
+      if (rawValue)  mapValue = 0;   // If value is != 0, then button is off
+      else           mapValue = 127;   // If value is == 0, the button is on (active LOW)
+    }
   }
-  Serial.print("Channel: "); Serial.print(channel); Serial.print("\t");
-  Serial.print("Tipo: "); Serial.print(inputData.AD() ? "Analog" : "Digital"); Serial.print("\t");
-  Serial.print("Min: "); Serial.print(minMidi); Serial.print("\t");
-  Serial.print("Max: "); Serial.print(maxMidi); Serial.print("\t");
-  Serial.print("Modo: "); Serial.print(MODE_LABEL(mode)); Serial.print("\t");
-  Serial.print("Parameter: "); Serial.print((inputData.param_coarse() << 7) | inputData.param_fine()); Serial.print("  Valor: "); Serial.println(value);
+  Serial.print("Channel: "); Serial.print(channel);
+  Serial.print("    Tipo: "); Serial.print(inputData.AD() ? "Analog" : "Digital");
+  Serial.print("    Min: "); Serial.print(mode == KMS::M_NRPN ? minMidiNRPN : minMidi);
+  Serial.print("    Max: "); Serial.print(mode == KMS::M_NRPN ? maxMidiNRPN : maxMidi); 
+  Serial.print("    Modo: "); Serial.print(MODE_LABEL(mode)); 
+  Serial.print("    Parameter: "); Serial.print((inputData.param_coarse() << 7) | inputData.param_fine());
+  Serial.print("    Valor: "); Serial.print(mapValue); 
+  Serial.print("    Valor original: "); Serial.println(rawValue);  
+  prevValue[numInput] = mapValue;   // Save value to previous data array  
 #endif
 
   return;
@@ -840,26 +864,36 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t value)
 
    Recibe: -
 */
-uint16_t IsNoise(uint16_t currentValue, uint16_t prevValue, uint16_t input, bool nrpn, byte noiseTh) {
-  static bool upOrDown[NUM_MUX * NUM_MUX_CHANNELS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                                      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+/*
+   Funcion para filtrar el ruido analógico de los pontenciómetros. Analiza si el valor crece o decrece, y en el caso de un cambio de dirección,
+   decide si es ruido o no, si hubo un cambio superior al valor anterior más el umbral de ruido.
 
-  if (upOrDown[input] == ANALOG_UP) {
+   Recibe: -
+*/
+uint16_t IsNoise(uint16_t currentValue, uint16_t prevValue, uint16_t input, byte noiseTh, bool raw) {
+  static bool upOrDownRaw[NUM_MUX * NUM_MUX_CHANNELS] = {};
+  static bool upOrDownOutput[NUM_MUX * NUM_MUX_CHANNELS] = {};
+
+  bool directionOfChange = upOrDownRaw[input] ? raw == true : upOrDownOutput[input];
+
+  if (directionOfChange == ANALOG_UP) {
     if (currentValue > prevValue) {            // Si el valor está creciendo, y la nueva lectura es mayor a la anterior,
       return 0;                        // no es ruido.
     }
     else if (currentValue < prevValue - noiseTh) { // Si el valor está creciendo, y la nueva lectura menor a la anterior menos el UMBRAL
-      upOrDown[input] = ANALOG_DOWN;                                     // se cambia el estado a DECRECIENDO y
-      return 0;                                                               // no es ruido.
+      if(raw) upOrDownRaw[input] = ANALOG_DOWN;        // se cambia el estado a DECRECIENDO y
+      else    upOrDownOutput[input] = ANALOG_DOWN;
+      return 0;                                       // no es ruido.
     }
   }
-  if (upOrDown[input] == ANALOG_DOWN) {
+  else if (directionOfChange == ANALOG_DOWN) {
     if (currentValue < prevValue) { // Si el valor está decreciendo, y la nueva lectura es menor a la anterior,
       return 0;                                        // no es ruido.
     }
     else if (currentValue > prevValue + noiseTh) {  // Si el valor está decreciendo, y la nueva lectura mayor a la anterior mas el UMBRAL
-      upOrDown[input] = ANALOG_UP;                                       // se cambia el estado a CRECIENDO y
-      return 0;                                                               // no es ruido.
+      if(raw) upOrDownRaw[input] = ANALOG_UP;        // se cambia el estado a CRECIENDO y
+      else    upOrDownOutput[input] = ANALOG_UP;
+      return 0;                                      // no es ruido.
     }
   }
   return 1;         // Si todo lo anterior no se cumple, es ruido.
