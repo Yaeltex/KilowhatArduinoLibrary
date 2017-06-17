@@ -23,7 +23,7 @@ namespace KMS {
 
     //Write to the EEPROM
     //Address is 0-based and automatically offseted by KMS_EEPROM_START
-    void write(unsigned int address, const byte *buf, int len);
+    bool write(unsigned int address, const byte *buf, int len);
     
     //Get the EEPROM length in bytes
     unsigned int length(void);

@@ -14,10 +14,13 @@ namespace KMS {
     while(len--)
       *(buf++) = EEPROM.readByte(address++);
   }
-  void EEPROM_IO::write(unsigned int address, const byte *buf, int len) {
+  bool EEPROM_IO::write(unsigned int address, const byte *buf, int len) {
     address += KMS_DATA_START;
-    while(len--)
+    while(len--){
       EEPROM.updateByte(address++, *(buf++));   //Update only writes if the value changed (extends EEPROM lifetime)
+	  if(EEPROM.read(address-1,)!= *(buf-1)) return false;
+	}
+	return true;
   }
   unsigned int EEPROM_IO::length(void) {
 	#if defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
