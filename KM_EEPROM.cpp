@@ -18,7 +18,7 @@ namespace KMS {
     address += KMS_DATA_START;
     while(len--){
       EEPROM.updateByte(address++, *(buf++));   //Update only writes if the value changed (extends EEPROM lifetime)
-	  if(EEPROM.read(address-1,)!= *(buf-1)) return false;
+	  if(EEPROM.read(address-1)!= *(buf-1)) return false;
 	}
 	return true;
   }
