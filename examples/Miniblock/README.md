@@ -1,6 +1,7 @@
+# Miniblock Arduino Sketch
 Este es el código que usa Miniblock, el controlador MIDI de Yaeltex.
 
-Log:
+### Log:
 
 ***1.1***
 * Reordenamiento de los potenciómetros para que se correspondan con las filas del Kilowhat.
@@ -8,6 +9,8 @@ Log:
 
 ***1.0***
 * Versión inicial
+
+### Instalación
 
 Para usar estos sketchs se requiere la última versión del [Arduino IDE](https://www.arduino.cc/en/main/software) y las siguientes librerías, instaladas en la carpeta Documents/Arduino/libraries:
 
