@@ -1,18 +1,18 @@
-Este es el c骴igo que usa Miniblock, el controlador MIDI de Yaeltex.
+Este es el c贸digo que usa Miniblock, el controlador MIDI de Yaeltex.
 
 Log:
 
-1.1
-* Reordenamiento de los potenci髆etros para que se correspondan con las filas del Kilowhat.
-* Bugs en la recepci髇 MIDI arreglados.
+**1.1
+* Reordenamiento de los potenci贸metros para que se correspondan con las filas del Kilowhat.
+* Bugs en la recepci贸n MIDI arreglados.
 
-1.0
-Versi髇 inicial
+**1.0
+* Versi贸n inicial
 
-Para usar estos sketchs se requieren las siguientes librer韆s:
+Para usar estos sketchs se requiere la 煤ltima versi贸n del [Arduino IDE](https://www.arduino.cc/en/main/software) y las siguientes librer铆as, instaladas en la carpeta Documents/Arduino/libraries:
 
 * [Kilomux Shield Arduino Library](https://github.com/Yaeltex/kilomux-arduino-library/archive/master.zip)
 * [Kilowhat SysEx Library](https://github.com/Yaeltex/kilowhat-arduino-library/archive/master.zip)
-* [EEPROMex - extensi髇 de la librer韆 EEPROM](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/EEPROMEx.zip?raw=true)
+* [EEPROMex - extensi贸n de la librer铆a EEPROM](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/EEPROMEx.zip?raw=true)
 * [NewPing - modificada por Yaeltex](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/NewPing.zip?raw=true)
 * [Arduino MIDI Library 4.2 o superior](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/MIDI.zip?raw=true)
