@@ -6,9 +6,11 @@ Este es el código que usa Miniblock, el controlador MIDI de Yaeltex.
 ***1.1***
 * Reordenamiento de los potenciómetros para que se correspondan con las filas del Kilowhat.
 * Bugs en la recepción MIDI arreglados.
+* Funciona con la versión 0.9.1-mb.
 
 ***1.0***
 * Versión inicial
+* Funciona con la versión 0.9.1-mb.
 
 ### Instalación
 
