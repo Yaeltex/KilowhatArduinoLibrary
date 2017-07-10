@@ -1,18 +1,7 @@
 # Miniblock Arduino Sketch
 Este es el código que usa Miniblock, el controlador MIDI de Yaeltex.
 
-### Log
-
-***1.1***
-* Reordenamiento de los potenciómetros para que se correspondan con las filas del Kilowhat.
-* Bugs en la recepción MIDI arreglados.
-* Funciona con la versión 0.9.1-mb.
-
-***1.0***
-* Versión inicial
-* Funciona con la versión 0.9.1-mb.
-
-### Instalación
+## Instalación
 
 Para usar estos sketchs se requiere la última versión del [Arduino IDE](https://www.arduino.cc/en/main/software) y las siguientes librerías, instaladas en la carpeta Documents/Arduino/libraries:
 
@@ -21,3 +10,14 @@ Para usar estos sketchs se requiere la última versión del [Arduino IDE](https:
 * [EEPROMex - extensión de la librería EEPROM](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/EEPROMEx.zip?raw=true)
 * [NewPing - modificada por Yaeltex](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/NewPing.zip?raw=true)
 * [Arduino MIDI Library 4.2 o superior](https://github.com/Yaeltex/kilowhat-arduino-library/blob/master/examples/libs/MIDI.zip?raw=true)
+
+## Log
+
+###***1.1***
+* Reordenamiento de los potenciómetros para que se correspondan con las filas del Kilowhat.
+* Bugs en la recepción MIDI arreglados.
+* Funciona con la versión 0.9.1-mb.
+
+###***1.0***
+* Versión inicial
+* Funciona con la versión 0.9.1-mb.
