@@ -35,7 +35,7 @@
 
 void setup(); // Esto es para solucionar el bug que tiene Arduino al usar los #ifdef del preprocesador
 
-//#define MIDI_COMMS
+#define MIDI_COMMS
 
 #if defined(MIDI_COMMS)
 struct MySettings : public midi::DefaultSettings
@@ -477,9 +477,7 @@ void HandleNotes() {
             }
           }
         } else if (MIDI.getType() == midi::NoteOff) {
-          if (!data2) {
-            digitalOutState[currBank][outputIndex] = OUT_OFF;
-          }
+          digitalOutState[currBank][outputIndex] = OUT_OFF;
         }
         changeDigOutState = true;
         break;
