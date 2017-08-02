@@ -400,27 +400,25 @@ void UpdateDigitalOutputs() {
   uint16_t dOut = 0;
 
   if (newBank || changeDigOutState) {
-    if (newBank && !configMode) {                                   // If new bank flag is on
+    changeDigOutState = false;
+
+    if (newBank && !configMode) {                                                // If new bank flag is on
       newBank = false;                                              // turn it off
       for (int bankLED = 0; bankLED < MAX_BANKS; bankLED++) {       // and cycle through the LEDs to check which bank is on and which one is off
         if (currBank == bankLED) {                                  // If the current bank matches this LED
           LedWrite(7 - bankLED, HIGH);                                // turn this LED on.  (7-LED) because they are numbered backwards and LED 0 is on output 7 and so on...
-        } else {                                                    // If this LED does not match the current bank selected,
+        } else {                                                     // If this LED does not match the current bank selected,
           LedWrite(7 - bankLED, LOW);                                 // turn this LED off.
         }
       }
-      return;
     }
 
-    if(changeDigOutState){
-      changeDigOutState = false;
-      // Turn normal LEDs on or OFF
-      for (dOut = 0; dOut < NUM_LEDS; dOut++) {                       // Cycle the rest of the LEDs for Miniblock
-        if (digitalOutState[currBank][dOut] == OUT_ON)          // If this bank has this LED on, because the bank changed and it was originally on, or because it arrived a matching MIDI message
-          LedWrite(3 - dOut, HIGH);                               // turn this LED on. (3-LED) because they are numbered backwards, LED 0 is on output 3 and so on...
-        else if (digitalOutState[currBank][dOut] == OUT_OFF)    // If this LED is meant to be off,
-          LedWrite(3 - dOut, LOW);                                // turn this LED off.
-      } 
+    // Turn normal LEDs on or OFF
+    for (dOut = 0; dOut < NUM_LEDS; dOut++) {                       // Cycle the rest of the LEDs for Miniblock
+      if (digitalOutState[currBank][dOut] == OUT_ON)          // If this bank has this LED on, because the bank changed and it was originally on, or because it arrived a matching MIDI message
+        LedWrite(3 - dOut, HIGH);                               // turn this LED on. (3-LED) because they are numbered backwards, LED 0 is on output 3 and so on...
+      else if (digitalOutState[currBank][dOut] == OUT_OFF)    // If this LED is meant to be off,
+        LedWrite(3 - dOut, LOW);                                // turn this LED off.
     }
   }
 }
@@ -531,23 +529,23 @@ void ReadSerial() {
 
 #if defined(MIDI_COMMS)
 void HandleNotes() {
-  byte data1, data2, channel;
+  byte data1, data2, channel;   // 3 byte midi message
   data1 = MIDI.getData1();
   data2 = MIDI.getData2();
   channel = MIDI.getChannel();    // Channel 1-16
   if (!configMode) {
-    for (byte outputIndex = 0; outputIndex < NUM_LEDS; outputIndex++) {
-      KMS::Output outputData = KMS::output(outputIndex);
-      if (data1 == outputData.param() && channel == outputData.channel()) {
-        if (MIDI.getType() == midi::NoteOn) {
-          if (outputData.blink() && data2 >= outputData.blink_min() && data2 <= outputData.blink_max()) {
-            digitalOutState[currBank][outputIndex] = OUT_BLINK;
-            outputBlinkState = false;
-          } else if (outputData.blink() && data2 && (data2 < outputData.blink_min() || data2 > outputData.blink_max())) {
-            digitalOutState[currBank][outputIndex] = OUT_ON;
-          } else if (outputData.blink() && !data2) {
-            digitalOutState[currBank][outputIndex] = OUT_OFF;
-          } else {       // blink off
+    for (byte outputIndex = 0; outputIndex < NUM_LEDS; outputIndex++) {     // Scan every output available
+      KMS::Output outputData = KMS::output(outputIndex);                      // Get EEPROM Data
+      if (data1 == outputData.param() && channel == outputData.channel()) {   // If channel and note number match an output in the config
+        if (MIDI.getType() == midi::NoteOn) {                                                             // If message is Note On
+          if (outputData.blink() && data2 >= outputData.blink_min() && data2 <= outputData.blink_max()) {   // If output is set to blink, and velocity is between blink min and max,
+            digitalOutState[currBank][outputIndex] = OUT_BLINK;                                               // set output to start blinking
+            outputBlinkState = false;                                                                         // and indicate led is currently OFF
+          } else if (outputData.blink() && data2 && (data2 < outputData.blink_min() || data2 > outputData.blink_max())) { // If output is set to blink, and velocity is not between blink min and max, but is not zero,
+            digitalOutState[currBank][outputIndex] = OUT_ON;                                                                // set output to ON
+          } else if (outputData.blink() && !data2) {                                                                      // If velocity is 0  
+            digitalOutState[currBank][outputIndex] = OUT_OFF;                                                               // set output to OFF
+          } else {                                                                    // If blink is off
             if (data2) {
               digitalOutState[currBank][outputIndex] = OUT_ON;
             } else {
@@ -555,9 +553,7 @@ void HandleNotes() {
             }
           }
         } else if (MIDI.getType() == midi::NoteOff) {
-          if (!data2) {
-            digitalOutState[currBank][outputIndex] = OUT_OFF;
-          }
+          digitalOutState[currBank][outputIndex] = OUT_OFF;
         }
         changeDigOutState = true;
         break;

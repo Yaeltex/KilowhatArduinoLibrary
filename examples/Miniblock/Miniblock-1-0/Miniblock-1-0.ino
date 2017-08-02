@@ -75,10 +75,17 @@ static const char * const modeLabels[] = {
 #define CONFIG_MODE       1    // PC->hw : Activate monitor mode
 #define CONFIG_ACK        2    // HW->pc : Acknowledge the config mode
 #define DUMP_TO_HW        3    // PC->hw : Partial EEPROM dump from PC
-#define DUMP_OK           4    // HW->pc : Ack from dump properly saved
-#define DUMP_ERROR        5
-#define EXIT_CONFIG       6    // HW->pc : Deactivate monitor mode
-#define EXIT_CONFIG_ACK   7    // HW->pc : Ack from exit config mode
+#define DUMP_OK           4    // HW->pc : Ack signaling dump properly saved
+// Kilowhat 0.9.2
+//#define DUMP_ERROR        5    // HW->pc : Ack signaling error in EEPROM write cycle
+#define EXIT_CONFIG       5    // PC->hw : Deactivate monitor mode
+#define EXIT_CONFIG_ACK   6    // HW->pc : Ack from exit config mode
+
+const byte configAckSysExMsg[5] = {'Y', 'T', 'X', CONFIG_ACK, 0};
+const byte exitConfigAckSysExMsg[5] = {'Y', 'T', 'X', EXIT_CONFIG_ACK, 0};
+const byte dumpOkSysExMsg[5] = {'Y', 'T', 'X', DUMP_OK, 0};
+// Kilowhat 0.9.2
+//const byte dumpErrorSysExMsg[5] = {'Y', 'T', 'X', DUMP_ERROR, 0};
 
 #define CONFIG_OFF 0
 #define CONFIG_ON 1
@@ -182,7 +189,7 @@ void setup() {
 #endif
 
   ResetConfig(CONFIG_OFF);
-
+  
 #if defined(DEBUG)
   avgTimes = EEPROM.readLong(500);
   Serial.println(avgTimes);
@@ -269,11 +276,10 @@ void ResetConfig(bool newConfig) {
   currBank = 0;
   KMS::setBank(currBank);
   configMode = newConfig;
+  newBank = true; changeDigOutState = true;
   firstRead = true;
-  receivingSysEx = 0;
 
   if (gD.isValid()) {
-
     if (gD.protocolVersion() == 1) {
       packetSize = 57;
     } else {
@@ -296,6 +302,14 @@ void ResetConfig(bool newConfig) {
       MIDI.turnThruOn();             // Turn midi thru on, because configuration says so
     else
       MIDI.turnThruOff();            // Turn midi thru off, because configuration says so
+
+    if(configMode){
+      // |F0, 'Y' , 'T' , 'X', command, index, F7|
+      MIDI.sendSysEx(5, configAckSysExMsg, false);
+    }else{
+      // |F0, 'Y' , 'T' , 'X', command, index, F7|
+      MIDI.sendSysEx(5, exitConfigAckSysExMsg, false);
+    }
 #endif
 
     //    ultrasonicSensorData = KMS::ultrasound();
@@ -382,13 +396,13 @@ void UpdateDigitalOutputs() {
 
   if (newBank || changeDigOutState) {
     changeDigOutState = false;
-
-    if (newBank && !configMode) {                                                // If new bank flag is on
+    
+    if (newBank && !configMode) {                                   // If new bank flag is on
       newBank = false;                                              // turn it off
       for (int bankLED = 0; bankLED < MAX_BANKS; bankLED++) {       // and cycle through the LEDs to check which bank is on and which one is off
         if (currBank == bankLED) {                                  // If the current bank matches this LED
           LedWrite(7 - bankLED, HIGH);                                // turn this LED on.  (7-LED) because they are numbered backwards and LED 0 is on output 7 and so on...
-        } else {                                                     // If this LED does not match the current bank selected,
+        } else {                                                    // If this LED does not match the current bank selected,
           LedWrite(7 - bankLED, LOW);                                 // turn this LED off.
         }
       }
@@ -428,12 +442,13 @@ void ReadMidi(void) {
       HandleNotes(); break;
     case midi::NoteOff:
       HandleNotes(); break;
+    case midi::ControlChange:
+      break;  
     case midi::SystemExclusive:
-      MIDI.turnThruOff();
       int sysexLength = 0;
       const byte *pMsg;
       static bool eepromWriteFailed = false;
-
+      
       sysexLength = (int) MIDI.getSysExArrayLength();
       pMsg = MIDI.getSysExArray();
 
@@ -449,50 +464,44 @@ void ReadMidi(void) {
         if (command == CONFIG_MODE && !configMode) {           // Enter config mode
           flagBlinkStatus = 1;
           blinkCountStatus = 1;
-          const byte configAckSysExMsg[5] = {'Y', 'T', 'X', CONFIG_ACK, 0};
-          MIDI.sendSysEx(5, configAckSysExMsg, false);
           ResetConfig(CONFIG_ON);
         }
         else if (command == EXIT_CONFIG && configMode) {           // Enter config mode
           flagBlinkStatus = 1;
           blinkCountStatus = 1;
-          const byte configAckSysExMsg[5] = {'Y', 'T', 'X', EXIT_CONFIG_ACK, 0};
-          MIDI.sendSysEx(5, configAckSysExMsg, false);
           ResetConfig(CONFIG_OFF);
         }
         else if (command == DUMP_TO_HW) {           // Save dump data
           if (!receivingSysEx) {
             receivingSysEx = 1;
+            MIDI.turnThruOff();
           }
 
           bool writeResult = KMS::io.write(packetSize * pMsg[5], pMsg + 6, sysexLength - 7); // pMsg has index in byte 6, total sysex packet has max.
-          if(!writeResult)
-            eepromWriteFailed = true;
-
-          // |F0, 'Y' , 'T' , 'X', command, index, F7|
-          flagBlinkStatus = 1;
-          blinkCountStatus = 1;
+          
+          if(!writeResult)  eepromWriteFailed = true;
+          else              eepromWriteFailed = false;
 
           if (sysexLength < packetSize + 7) { // Last message?
+            receivingSysEx = 0;
             flagBlinkStatus = 1;
             blinkCountStatus = 5;
+            // |F0, 'Y' , 'T' , 'X', command, index, F7|
 /*    Kilowhat 0.9.2    
 //            if(eepromWriteFailed){
-//              const byte dumpResultMsg[5] = {'Y', 'T', 'X', DUMP_ERROR, 0};
-//              MIDI.sendSysEx(5, dumpResultMsg, false);
+//              MIDI.sendSysEx(5, dumpOkSysExMsg, false);
 //            }
 //            else{
-//              const byte dumpResultMsg[5] = {'Y', 'T', 'X', DUMP_OK, 0}; 
-//              MIDI.sendSysEx(5, dumpResultMsg, false);
+//              MIDI.sendSysEx(5, dumpErrorSysExMsg, false);
 //            }
 */
 //    Kilowhat 0.9.1                
-            const byte dumpResultMsg[5] = {'Y', 'T', 'X', DUMP_OK, 0}; 
-//            
-            MIDI.sendSysEx(5, dumpResultMsg, false);
-            const byte configAckSysExMsg[5] = {'Y', 'T', 'X', EXIT_CONFIG_ACK, 0};
-            MIDI.sendSysEx(5, configAckSysExMsg, false);
+            MIDI.sendSysEx(5, dumpOkSysExMsg, false);
+//              
             ResetConfig(CONFIG_OFF);
+          }else{
+            flagBlinkStatus = 1;
+            blinkCountStatus = 1;
           }
         }
       }
@@ -602,7 +611,7 @@ void pinReadInputs(void) {
         }
       } else {                                                     // Not shifter
         byte buttonPressed = 3 - buttonPin;                         // Button 0 is on pin 3, button 1 is on pin 2, button 2 is on pin 1, button 3 is on pin 0.
-        byte inputIndex = 32 + buttonPressed;
+        byte inputIndex = 32 + buttonPressed;                     // Same as Kilowhat
         KMS::InputNorm inputData = KMS::input(inputIndex);    // Button configuration will always be at position 32, 33, 34 and 35 for the bank.
         if (inputData.mode() != KMS::M_OFF) {
           bool toggle = inputData.toggle();                           // is the button set as toggle?
@@ -824,10 +833,11 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t rawVal
   if (!configMode) {
     if (analog) {
       constrainedValue = constrain(rawValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT);
-      if (IsNoise(constrainedValue, prevRawValue[numInput], numInput, 2, true)) 
+      
+      if (IsNoise(constrainedValue, prevRawValue[numInput], numInput, 7, true)) 
         return;                                                           
-      prevRawValue[numInput] = constrainedValue;  
-      //Serial.print("Raw value: "); Serial.print(constrainedValue); Serial.println();
+      prevRawValue[numInput] = constrainedValue; 
+      
       if (mode == KMS::M_NRPN) {
         minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
         maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
@@ -844,13 +854,10 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t rawVal
             return;
         }
       } else {
-//        if (minMidi < maxMidi)
-//          mapValue = map(constrainedValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT, minMidi, maxMidi);
-//        else
         mapValue = map(constrainedValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT, minMidi, maxMidi);
         int maxMinDiff = maxMidi - minMidi;
         noiseTh = abs(maxMinDiff) >> 6;          // divide range to get noise threshold. Max th is 127/64 = 2 : Min th is 0.
-        if (IsNoise(mapValue, prevValue[numInput], numInput, 0, false))
+        if (mapValue == prevValue[numInput])
           return;
       }
       prevValue[numInput] = mapValue;   // Save value to previous data array
@@ -860,16 +867,16 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t rawVal
       else           mapValue = maxMidi;   // If value is == 0, the button is on (active LOW)
     }
   }
-
+  //if(millis() < 2000) return;
 #if defined(MIDI_COMMS)
   if (configMode) { // CONFIG MODE MESSAGES
     if(analog){
       constrainedValue = constrain(rawValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT);
-      if (IsNoise(constrainedValue, prevRawValue[numInput], numInput, 2, true)) 
+      if (IsNoise(constrainedValue, prevRawValue[numInput], numInput, 7, true)) 
         return;                                                           
       prevRawValue[numInput] = constrainedValue;
       mapValue = map(constrainedValue, CONST_LOW_LIMIT, CONST_HIGH_LIMIT, 0, 127);
-      if (IsNoise(mapValue, prevValue[numInput], numInput, 0, false))
+      if (mapValue == prevValue[numInput])
         return;
       prevValue[numInput] = mapValue;   // Save value to previous data array
     }else {      // DIGITAL INPUTS
@@ -931,8 +938,10 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t rawVal
   Serial.print("    Modo: "); Serial.print(MODE_LABEL(mode)); 
   Serial.print("    Parameter: "); Serial.print((inputData.param_coarse() << 7) | inputData.param_fine());
   Serial.print("    Valor: "); Serial.print(mapValue); 
-  Serial.print("    Valor original: "); Serial.println(rawValue);  
+  Serial.print("    Valor original: "); Serial.print(rawValue);  
+  Serial.print("    Valor original anterior: "); Serial.println(prevRawValue[numInput]);  
   prevValue[numInput] = mapValue;   // Save value to previous data array
+  prevRawValue[numInput] = constrainedValue;  
 #endif
   // STATUS LED OFF
   if(!flagBlinkStatus){
@@ -956,7 +965,11 @@ uint16_t IsNoise(uint16_t currentValue, uint16_t prevValue, uint16_t input, byte
   static bool upOrDownOutput[NUM_MUX * NUM_MUX_CHANNELS] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                                             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};                                                      
 
-  bool directionOfChange = upOrDownRaw[input] ? raw == true : upOrDownOutput[input];
+  bool directionOfChange;
+  if(raw)
+    directionOfChange = upOrDownRaw[input];
+  else
+    directionOfChange = upOrDownOutput[input];
 
   if (directionOfChange == ANALOG_UP) {
     if (currentValue > prevValue) {            // Si el valor está creciendo, y la nueva lectura es mayor a la anterior,
