@@ -14,8 +14,9 @@ Para usar estos sketchs se requiere la última versión del [Arduino IDE](https:
 ## Log
 
 ### 1.1
-* Reordenamiento de los potenciómetros para que se correspondan con las filas del Kilowhat.
+* Reordenamiento de los potenciómetros para que se correspondan con las filas del Kilowhat. Es necesario actualizar el archivo miniblock-default.kwt.
 * Bugs en la recepción MIDI arreglados.
+* LEDs se apagan con NOTE OFF con cualquier velocity 0-127. Antes solo con velocity 0.
 * Funciona con la versión 0.9.1-mb.
 
 ### 1.0
