@@ -14,11 +14,13 @@ Para usar estos sketchs se requiere la última versión del [Arduino IDE](https:
 ## Log
 
 ### 1.1
-* Reordenamiento de los potenciómetros para que se correspondan con las filas del Kilowhat. Es necesario actualizar el archivo miniblock-default.kwt.
+* Reordenamiento de los potenciómetros para que se correspondan con las filas del Kilowhat. Es necesario actualizar el archivo de configuración.
+* Configuración default de Kilowhat: [miniblock-default-1-1.kwt](https://yaeltex.com/wp-content/uploads/2017/07/miniblock-default-1-1.zip)
 * Bugs en la recepción MIDI arreglados.
-* LEDs se apagan con NOTE OFF con cualquier velocity 0-127. Antes solo con velocity 0.
-* Funciona con la versión 0.9.1-mb.
+* LEDs se apagan con NOTE OFF con cualquier velocity 0-127. Antes sólo con velocity 0.
+* Funciona con la versión 0.9.1-mb de Kilowhat.
 
 ### 1.0
 * Versión inicial
-* Funciona con la versión 0.9.1-mb.
+* Configuración default de Kilowhat: [miniblock-default-1-0.kwt](https://yaeltex.com/wp-content/uploads/2017/07/miniblock-default-1-0.zip)
+* Funciona con la versión 0.9.1-mb de Kilowhat.
