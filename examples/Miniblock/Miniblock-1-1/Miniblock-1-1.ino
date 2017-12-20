@@ -896,8 +896,8 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t rawVal
       case (KMS::M_CC):
         MIDI.sendControlChange(param, mapValue, channel); break;
       case KMS::M_NRPN:
-        MIDI.sendControlChange( 101, inputData.param_coarse(), channel);
-        MIDI.sendControlChange( 100, inputData.param_fine(), channel);
+        MIDI.sendControlChange( 99, inputData.param_coarse(), channel);
+        MIDI.sendControlChange( 98, inputData.param_fine(), channel);
         MIDI.sendControlChange( 6, (mapValue >> 7) & 0x7F, channel);
         MIDI.sendControlChange( 38, (mapValue & 0x7F), channel); break;
       case KMS::M_PROGRAM_MINUS:

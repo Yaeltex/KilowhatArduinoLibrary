@@ -35,7 +35,7 @@
 
 void setup(); // Esto es para solucionar el bug que tiene Arduino al usar los #ifdef del preprocesador
 
-#define MIDI_COMMS
+//#define MIDI_COMMS
 
 #if defined(MIDI_COMMS)
 struct MySettings : public midi::DefaultSettings
@@ -476,7 +476,7 @@ void HandleNotes() {
               digitalOutState[currBank][outputIndex] = OUT_OFF;
             }
           }
-        } else if (MIDI.getType() == midi::NoteOff) {
+        } else if (MIDI.getType() == midi::NoteOff) {         // Note off con cualquier velocity apaga los LEDs
           digitalOutState[currBank][outputIndex] = OUT_OFF;
         }
         changeDigOutState = true;
@@ -558,9 +558,9 @@ void EchoCheck(){
     if (mode == KMS::M_NRPN){
       minMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + minMidi);
       maxMidiNRPN = pgm_read_word_near(KMS::nrpn_min_max + maxMidi);
-      usSensorValue = map(usSensorValue, 0, mode == KMS::M_NRPN ? 1024 : 128, minMidiNRPN, maxMidiNRPN+1);
+      usSensorValue = map(usSensorValue, 0, sensorRange+1, minMidiNRPN, maxMidiNRPN+1);
     }else{
-      usSensorValue = map(usSensorValue, 0, 128, minMidi, maxMidi+1); 
+      usSensorValue = map(usSensorValue, 0, sensorRange+1, minMidi, maxMidi+1); 
     }
     
     // FILTRO DE MEDIA MÓVIL PARA SUAVIZAR LA LECTURA
@@ -580,8 +580,8 @@ void EchoCheck(){
           case (KMS::M_CC):
             MIDI.sendControlChange(param, usSensorValue, midiChannel); break;
           case KMS::M_NRPN:
-            MIDI.sendControlChange( 101, ultrasonicSensorData.param_coarse(), midiChannel);
-            MIDI.sendControlChange( 100, ultrasonicSensorData.param_fine(), midiChannel);
+            MIDI.sendControlChange( 99, ultrasonicSensorData.param_coarse(), midiChannel);
+            MIDI.sendControlChange( 98, ultrasonicSensorData.param_fine(), midiChannel);
             MIDI.sendControlChange( 6, (usSensorValue >> 7) & 0x7F, midiChannel);
             MIDI.sendControlChange( 38, (usSensorValue & 0x7F), midiChannel); break;
           default: break;
@@ -803,8 +803,8 @@ void InputChanged(int numInput, const KMS::InputNorm &inputData, uint16_t rawVal
       case (KMS::M_CC):
         MIDI.sendControlChange(param, mapValue, channel); break;
       case KMS::M_NRPN:
-        MIDI.sendControlChange( 101, inputData.param_coarse(), channel);
-        MIDI.sendControlChange( 100, inputData.param_fine(), channel);
+        MIDI.sendControlChange( 99, inputData.param_coarse(), channel);
+        MIDI.sendControlChange( 98, inputData.param_fine(), channel);
         MIDI.sendControlChange( 6, (mapValue >> 7) & 0x7F, channel);
         MIDI.sendControlChange( 38, (mapValue & 0x7F), channel); break;
       case KMS::M_PROGRAM_MINUS:
