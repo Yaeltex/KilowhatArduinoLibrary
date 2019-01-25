@@ -91,7 +91,7 @@ class InputBase {
     byte param_fine() const {
       return _p[2];
     }
-
+	
     //Full param for NRPN (convenience method)
     int param_nrpn() const {
       param_coarse() << 7 | param_fine();
